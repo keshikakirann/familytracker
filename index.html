@@ -584,25 +584,10 @@
         let markers = {};
         let locationPermissionGranted = false;
         let currentFamilyId = null;
-        let myUserId = null;
+        let myInputId = null;
         let familyMembers = [];
         let familyMembersUnsubscribe = null;
         let myMemberDoc = null;
-
-        // Initialize user ID with better uniqueness
-        function initializeUser() {
-            // Generate a more unique user ID
-            const timestamp = Date.now();
-            const random = Math.random().toString(36).substr(2, 9);
-            const browser = navigator.userAgent.split(' ')[0];
-            const browserRandom = Math.random().toString(36).substr(2, 5);
-            
-            myUserId = `user_${timestamp}_${random}_${browserRandom}`;
-            
-            // Update debug info
-            document.getElementById('userIdDebug').textContent = myUserId;
-            document.getElementById('statusDebug').textContent = 'User ID generated';
-        }
 
         // Firebase helper functions
         async function createFamilyGroup(familyId) {
@@ -627,26 +612,54 @@
             }
         }
 
-        async function joinFamilyGroup(familyId, memberData) {
-            const { doc, setDoc, serverTimestamp } = window.firestoreImports;
-            
-            try {
-                const memberRef = doc(window.db, 'families', familyId, 'members', myUserId);
-                await setDoc(memberRef, {
-                    ...memberData,
-                    lastUpdated: serverTimestamp(),
-                    joinedAt: serverTimestamp()
-                });
-                
-                document.getElementById('statusDebug').textContent = 'Joined family group';
-                return true;
-            } catch (error) {
-                console.error('Error joining family group:', error);
-                document.getElementById('statusDebug').textContent = `Error joining family: ${error.message}`;
-                updateFirebaseStatus(`Failed to join family: ${error.message}`, 'error');
-                return false;
-            }
-        }
+       async function joinFamily() {
+    const input = document.getElementById('joinNameInput').value.trim();
+    if (!input) {
+        showAlert('Please enter a name or device ID to join the family group.');
+        return;
+    }
+
+    // Clean + normalize user ID
+    const userInputId = input.toLowerCase().replace(/\s+/g, '_');
+    myUserId = userInputId;
+    document.getElementById('userIdDebug').textContent = myUserId;
+
+    // Check if ID already exists
+    const { doc, getDoc } = window.firestoreImports;
+    const userDocRef = doc(window.db, 'families', currentFamilyId, 'members', myUserId);
+    const userDocSnap = await getDoc(userDocRef);
+
+    if (userDocSnap.exists()) {
+        showAlert('This ID is already taken in this family. Try something like "yourname_phone" or "yourname_laptop".', 'error');
+        return;
+    }
+
+    const colors = ['#ff6b6b', '#4ecdc4', '#45b7d1', '#f9ca24', '#f0932b', '#eb4d4b', '#6c5ce7', '#a29bfe'];
+    const randomColor = colors[Math.floor(Math.random() * colors.length)];
+
+    const memberData = {
+        name: input,
+        id: myUserId,
+        color: randomColor,
+        status: 'online',
+        latitude: null,
+        longitude: null,
+        accuracy: null,
+        address: 'Getting location...',
+        battery: getBatteryLevel(),
+        deviceInfo: getDeviceInfo()
+    };
+
+    const success = await joinFamilyGroup(currentFamilyId, memberData);
+    if (success) {
+        document.getElementById('joinSection').classList.remove('show');
+        showAlert(`Welcome ${input}! You've joined the family group.`, 'success');
+        requestLocationPermission();
+    } else {
+        showAlert('Failed to join family group. Please try again.', 'error');
+    }
+}
+
 
         async function updateMyLocation(locationData) {
             if (!currentFamilyId || !myUserId) {
@@ -1248,7 +1261,6 @@
 
         // Initialize app
         function initApp() {
-            initializeUser();
             initializeMap();
             checkForFamilyJoin();
             
