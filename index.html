@@ -1,0 +1,1390 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>FamilyTracker - Location Sharing</title>
+    <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css" rel="stylesheet">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.css" />
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            min-height: 100vh;
+            color: #333;
+        }
+
+        .container {
+            max-width: 1200px;
+            margin: 0 auto;
+            padding: 20px;
+        }
+
+        .header {
+            background: rgba(255, 255, 255, 0.95);
+            backdrop-filter: blur(10px);
+            border-radius: 20px;
+            padding: 20px;
+            margin-bottom: 20px;
+            text-align: center;
+            box-shadow: 0 8px 32px rgba(0, 0, 0, 0.1);
+        }
+
+        .header h1 {
+            color: #4a5568;
+            font-size: 2.5em;
+            margin-bottom: 10px;
+        }
+
+        .header p {
+            color: #718096;
+            font-size: 1.1em;
+        }
+
+        .main-content {
+            display: grid;
+            grid-template-columns: 2fr 1fr;
+            gap: 20px;
+        }
+
+        .map-section {
+            background: rgba(255, 255, 255, 0.95);
+            backdrop-filter: blur(10px);
+            border-radius: 20px;
+            padding: 20px;
+            box-shadow: 0 8px 32px rgba(0, 0, 0, 0.1);
+        }
+
+        .family-section {
+            background: rgba(255, 255, 255, 0.95);
+            backdrop-filter: blur(10px);
+            border-radius: 20px;
+            padding: 20px;
+            box-shadow: 0 8px 32px rgba(0, 0, 0, 0.1);
+        }
+
+        #map {
+            height: 500px;
+            border-radius: 15px;
+            overflow: hidden;
+            border: 2px solid #e2e8f0;
+        }
+
+        .family-member {
+            display: flex;
+            align-items: center;
+            padding: 15px;
+            border-radius: 15px;
+            margin-bottom: 15px;
+            background: #f7fafc;
+            border: 2px solid #e2e8f0;
+            transition: all 0.3s ease;
+            cursor: pointer;
+        }
+
+        .family-member:hover {
+            background: #edf2f7;
+            transform: translateY(-2px);
+            box-shadow: 0 5px 15px rgba(0, 0, 0, 0.1);
+        }
+
+        .family-member.active {
+            background: #e6fffa;
+            border-color: #38b2ac;
+        }
+
+        .avatar {
+            width: 50px;
+            height: 50px;
+            border-radius: 50%;
+            background: linear-gradient(45deg, #4facfe, #00f2fe);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            color: white;
+            font-weight: bold;
+            margin-right: 15px;
+            position: relative;
+        }
+
+        .status-indicator {
+            position: absolute;
+            bottom: 0;
+            right: 0;
+            width: 15px;
+            height: 15px;
+            border-radius: 50%;
+            border: 2px solid white;
+        }
+
+        .online { background: #48bb78; }
+        .away { background: #ed8936; }
+        .offline { background: #a0aec0; }
+
+        .member-info h3 {
+            margin-bottom: 5px;
+            color: #2d3748;
+        }
+
+        .member-info p {
+            color: #718096;
+            font-size: 0.9em;
+        }
+
+        .member-info small {
+            color: #a0aec0;
+            font-size: 0.8em;
+        }
+
+        .controls {
+            display: flex;
+            gap: 10px;
+            margin-top: 20px;
+            flex-wrap: wrap;
+        }
+
+        .btn {
+            padding: 12px 20px;
+            border: none;
+            border-radius: 10px;
+            font-weight: bold;
+            cursor: pointer;
+            transition: all 0.3s ease;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            flex: 1;
+            min-width: 140px;
+            justify-content: center;
+        }
+
+        .btn-primary {
+            background: linear-gradient(45deg, #667eea, #764ba2);
+            color: white;
+        }
+
+        .btn-primary:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 5px 15px rgba(102, 126, 234, 0.4);
+        }
+
+        .btn-secondary {
+            background: #edf2f7;
+            color: #4a5568;
+        }
+
+        .btn-secondary:hover {
+            background: #e2e8f0;
+        }
+
+        .btn:disabled {
+            opacity: 0.6;
+            cursor: not-allowed;
+        }
+
+        .alert {
+            background: #fed7e2;
+            border: 1px solid #fbb6ce;
+            color: #975a5a;
+            padding: 15px;
+            border-radius: 10px;
+            margin-top: 20px;
+            display: none;
+        }
+
+        .alert.show {
+            display: block;
+        }
+
+        .alert.success {
+            background: #c6f6d5;
+            border-color: #9ae6b4;
+            color: #276749;
+        }
+
+        .section-title {
+            font-size: 1.4em;
+            margin-bottom: 15px;
+            color: #2d3748;
+            display: flex;
+            align-items: center;
+            gap: 10px;
+        }
+
+        .location-details {
+            background: #f7fafc;
+            border-radius: 10px;
+            padding: 15px;
+            margin-top: 15px;
+            border: 2px solid #e2e8f0;
+        }
+
+        .distance-info {
+            background: #e6fffa;
+            border-radius: 8px;
+            padding: 10px;
+            margin-top: 10px;
+            border-left: 4px solid #38b2ac;
+        }
+
+        .gps-info {
+            background: #fff5f5;
+            border-radius: 8px;
+            padding: 10px;
+            margin-top: 10px;
+            border-left: 4px solid #f56565;
+            font-size: 0.9em;
+        }
+
+        .accuracy-indicator {
+            display: inline-block;
+            padding: 2px 6px;
+            border-radius: 3px;
+            font-size: 0.8em;
+            margin-left: 5px;
+        }
+
+        .accuracy-good { background: #c6f6d5; color: #276749; }
+        .accuracy-fair { background: #faf089; color: #744210; }
+        .accuracy-poor { background: #fed7e2; color: #975a5a; }
+
+        .geo-status {
+            background: #e6fffa;
+            border: 1px solid #9ae6b4;
+            border-radius: 8px;
+            padding: 10px;
+            margin-bottom: 15px;
+            font-size: 0.9em;
+            color: #276749;
+        }
+
+        .geo-status.requesting {
+            background: #faf089;
+            border-color: #ecc94b;
+            color: #744210;
+        }
+
+        .geo-status.denied {
+            background: #fed7e2;
+            border-color: #fbb6ce;
+            color: #975a5a;
+        }
+
+        .geo-status.error {
+            background: #fff5f5;
+            border-color: #fbb6ce;
+            color: #975a5a;
+        }
+
+        .modal {
+            display: none;
+            position: fixed;
+            z-index: 1000;
+            left: 0;
+            top: 0;
+            width: 100%;
+            height: 100%;
+            background-color: rgba(0, 0, 0, 0.5);
+            backdrop-filter: blur(5px);
+        }
+
+        .modal-content {
+            background: white;
+            margin: 15% auto;
+            padding: 20px;
+            border-radius: 15px;
+            width: 90%;
+            max-width: 500px;
+            box-shadow: 0 10px 30px rgba(0, 0, 0, 0.3);
+        }
+
+        .modal-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 20px;
+        }
+
+        .modal-title {
+            font-size: 1.5em;
+            color: #2d3748;
+        }
+
+        .close {
+            background: none;
+            border: none;
+            font-size: 1.5em;
+            cursor: pointer;
+            color: #a0aec0;
+        }
+
+        .close:hover {
+            color: #4a5568;
+        }
+
+        .share-link-box {
+            background: #f7fafc;
+            border: 2px solid #e2e8f0;
+            border-radius: 10px;
+            padding: 15px;
+            margin: 15px 0;
+            font-family: monospace;
+            font-size: 0.9em;
+            word-break: break-all;
+        }
+
+        .copy-btn {
+            background: #38b2ac;
+            color: white;
+            border: none;
+            padding: 8px 16px;
+            border-radius: 5px;
+            cursor: pointer;
+            font-size: 0.9em;
+        }
+
+        .copy-btn:hover {
+            background: #319795;
+        }
+
+        .join-section {
+            background: #fff5f5;
+            border: 2px solid #fbb6ce;
+            border-radius: 10px;
+            padding: 20px;
+            margin: 20px 0;
+            display: none;
+        }
+
+        .join-section.show {
+            display: block;
+        }
+
+        .join-section h3 {
+            color: #975a5a;
+            margin-bottom: 10px;
+        }
+
+        .join-input {
+            width: 100%;
+            padding: 10px;
+            border: 1px solid #e2e8f0;
+            border-radius: 5px;
+            margin-bottom: 10px;
+        }
+
+        .sync-status {
+            background: #e6fffa;
+            border: 1px solid #9ae6b4;
+            border-radius: 8px;
+            padding: 10px;
+            margin-bottom: 15px;
+            font-size: 0.9em;
+            color: #276749;
+        }
+
+        .sync-status.syncing {
+            background: #faf089;
+            border-color: #ecc94b;
+            color: #744210;
+        }
+
+        .sync-status.error {
+            background: #fff5f5;
+            border-color: #fbb6ce;
+            color: #975a5a;
+        }
+
+        @media (max-width: 768px) {
+            .main-content {
+                grid-template-columns: 1fr;
+            }
+            
+            .header h1 {
+                font-size: 2em;
+            }
+
+            #map {
+                height: 400px;
+            }
+
+            .modal-content {
+                margin: 10% auto;
+                width: 95%;
+            }
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="header">
+            <h1><i class="fas fa-map-marker-alt"></i> FamilyTracker</h1>
+            <p>Stay connected with your family's location in real-time</p>
+        </div>
+
+        <div class="main-content">
+            <div class="map-section">
+                <h2 class="section-title">
+                    <i class="fas fa-map"></i> Family Map
+                </h2>
+                
+                <div id="syncStatus" class="sync-status">
+                    <i class="fas fa-sync-alt"></i> Checking for family updates...
+                </div>
+                
+                <div id="geoStatus" class="geo-status requesting">
+                    <i class="fas fa-spinner fa-spin"></i> Requesting location permission...
+                </div>
+                
+                <div id="map"></div>
+                
+                <div class="location-details" id="locationDetails" style="display: none;">
+                    <h3 id="selectedMemberName"></h3>
+                    <p id="selectedMemberLocation"></p>
+                    <p id="selectedMemberTime"></p>
+                    <div class="distance-info" id="distanceInfo"></div>
+                    <div class="gps-info" id="gpsInfo"></div>
+                </div>
+
+                <div class="controls">
+                    <button class="btn btn-primary" onclick="shareMyLocation()" id="shareBtn">
+                        <i class="fas fa-crosshairs"></i> Share My Location
+                    </button>
+                    <button class="btn btn-secondary" onclick="toggleLocationSharing()" id="toggleBtn">
+                        <i class="fas fa-toggle-off"></i> Auto-Share
+                    </button>
+                </div>
+            </div>
+
+            <div class="family-section">
+                <h2 class="section-title">
+                    <i class="fas fa-users"></i> Family Members
+                </h2>
+                
+                <div class="join-section" id="joinSection">
+                    <h3><i class="fas fa-user-plus"></i> Join Family Group</h3>
+                    <input type="text" class="join-input" id="joinNameInput" placeholder="Enter your name">
+                    <button class="btn btn-primary" onclick="joinFamily()" style="width: 100%;">
+                        <i class="fas fa-sign-in-alt"></i> Join Family
+                    </button>
+                </div>
+                
+                <div id="familyMembers">
+                    <!-- Family members will be populated here -->
+                </div>
+
+                <div class="controls">
+                    <button class="btn btn-primary" onclick="showShareModal()">
+                        <i class="fas fa-share-alt"></i> Add Member
+                    </button>
+                    <button class="btn btn-secondary" onclick="clearAllLocations()">
+                        <i class="fas fa-eraser"></i> Clear All
+                    </button>
+                </div>
+
+                <div class="alert" id="alertBox">
+                    <strong id="alertTitle">Alert:</strong> <span id="alertMessage"></span>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Share Modal -->
+    <div id="shareModal" class="modal">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h2 class="modal-title"><i class="fas fa-share-alt"></i> Invite Family Member</h2>
+                <button class="close" onclick="closeShareModal()">&times;</button>
+            </div>
+            <p>Share this link with your family member so they can join and share their location:</p>
+            <div class="share-link-box" id="shareLink">
+                <!-- Generated link will appear here -->
+            </div>
+            <div style="text-align: center; margin-top: 15px;">
+                <button class="copy-btn" onclick="copyShareLink()">
+                    <i class="fas fa-copy"></i> Copy Link
+                </button>
+            </div>
+            <p style="margin-top: 15px; font-size: 0.9em; color: #718096;">
+                <strong>Demo Note:</strong> This is a demo version. In a real app, locations would be synchronized through a backend server. For now, you can simulate other family members by opening the shared link in a new browser tab/window.
+            </p>
+        </div>
+    </div>
+
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.js"></script>
+    <script>
+        // Global variables
+        let map;
+        let myLocation = null;
+        let locationSharingEnabled = false;
+        let watchId = null;
+        let selectedMember = null;
+        let markers = {};
+        let locationPermissionGranted = false;
+        let currentFamilyId = null;
+        let myUserId = null;
+        let syncInterval = null;
+
+        // Family data - using a shared key for demo simulation
+        const SHARED_STORAGE_KEY = 'family_tracker_shared_data';
+
+        // Initialize user ID
+        function initializeUser() {
+            myUserId = 'user_' + Date.now() + '_' + Math.random().toString(36).substr(2, 9);
+        }
+
+        // Family data structure
+        let familyMembers = [];
+
+        // Shared storage simulation (in real app, this would be a backend API)
+        function saveSharedData() {
+            try {
+                const sharedData = {
+                    familyGroups: getAllFamilyGroups(),
+                    lastUpdated: Date.now()
+                };
+                
+                // In a real app, this would be an API call to save to server
+                // For demo, we'll use a simulated shared storage
+                if (typeof(Storage) !== "undefined") {
+                    localStorage.setItem(SHARED_STORAGE_KEY, JSON.stringify(sharedData));
+                }
+                
+                updateSyncStatus('Synced with family group', 'success');
+            } catch (error) {
+                console.error('Error saving shared data:', error);
+                updateSyncStatus('Sync error occurred', 'error');
+            }
+        }
+
+        function loadSharedData() {
+            try {
+                if (typeof(Storage) !== "undefined") {
+                    const savedData = localStorage.getItem(SHARED_STORAGE_KEY);
+                    if (savedData) {
+                        const data = JSON.parse(savedData);
+                        return data.familyGroups || {};
+                    }
+                }
+                return {};
+            } catch (error) {
+                console.error('Error loading shared data:', error);
+                return {};
+            }
+        }
+
+        function getAllFamilyGroups() {
+            // This simulates getting all family groups from server
+            const saved = loadSharedData();
+            return saved;
+        }
+
+        function getFamilyGroup(familyId) {
+            const allGroups = getAllFamilyGroups();
+            return allGroups[familyId] || null;
+        }
+
+        function saveFamilyGroup(familyId, groupData) {
+            const allGroups = getAllFamilyGroups();
+            allGroups[familyId] = groupData;
+            
+            // Save back to shared storage
+            try {
+                const sharedData = {
+                    familyGroups: allGroups,
+                    lastUpdated: Date.now()
+                };
+                localStorage.setItem(SHARED_STORAGE_KEY, JSON.stringify(sharedData));
+                updateSyncStatus('Family group updated', 'success');
+            } catch (error) {
+                console.error('Error saving family group:', error);
+                updateSyncStatus('Failed to update family group', 'error');
+            }
+        }
+
+        // Update sync status
+        function updateSyncStatus(message, type = 'success') {
+            const statusEl = document.getElementById('syncStatus');
+            const icons = {
+                success: 'fas fa-check-circle',
+                error: 'fas fa-exclamation-triangle',
+                syncing: 'fas fa-sync-alt fa-spin'
+            };
+            
+            statusEl.innerHTML = `<i class="${icons[type]}"></i> ${message}`;
+            statusEl.className = `sync-status ${type === 'success' ? '' : type}`;
+            
+            // Auto-hide success messages
+            if (type === 'success') {
+                setTimeout(() => {
+                    statusEl.innerHTML = '<i class="fas fa-sync-alt"></i> Monitoring family updates...';
+                    statusEl.className = 'sync-status';
+                }, 3000);
+            }
+        }
+
+        // Check for family join
+        function checkForFamilyJoin() {
+            const urlParams = new URLSearchParams(window.location.search);
+            const familyId = urlParams.get('join');
+            
+            if (familyId) {
+                currentFamilyId = familyId;
+                document.getElementById('joinSection').classList.add('show');
+                showAlert('You\'ve been invited to join a family group! Enter your name to start sharing location.', 'success');
+                loadFamilyMembers();
+            } else {
+                // Create or use default family group
+                currentFamilyId = 'default_' + Date.now();
+                initializeDefaultFamily();
+            }
+        }
+
+        // Initialize default family
+        function initializeDefaultFamily() {
+            familyMembers = [
+                {
+                    id: myUserId,
+                    name: 'You',
+                    avatar: 'ME',
+                    color: '#4facfe',
+                    status: 'offline',
+                    location: null,
+                    lastSeen: 'Never',
+                    isMe: true,
+                    accuracy: null,
+                    lastUpdated: Date.now()
+                }
+            ];
+            
+            // Save to shared storage
+            saveFamilyGroup(currentFamilyId, {
+                id: currentFamilyId,
+                members: familyMembers,
+                createdAt: Date.now(),
+                lastUpdated: Date.now()
+            });
+        }
+
+        // Load family members from shared storage
+        function loadFamilyMembers() {
+            const familyGroup = getFamilyGroup(currentFamilyId);
+            if (familyGroup && familyGroup.members) {
+                // Find my entry or create one
+                let myEntry = familyGroup.members.find(m => m.id === myUserId);
+                if (!myEntry) {
+                    myEntry = {
+                        id: myUserId,
+                        name: 'You',
+                        avatar: 'ME',
+                        color: '#4facfe',
+                        status: 'offline',
+                        location: null,
+                        lastSeen: 'Never',
+                        isMe: true,
+                        accuracy: null,
+                        lastUpdated: Date.now()
+                    };
+                }
+                
+                // Load all members, marking my entry
+                familyMembers = familyGroup.members.map(member => ({
+                    ...member,
+                    isMe: member.id === myUserId
+                }));
+                
+                // Ensure my entry is included
+                if (!familyMembers.find(m => m.id === myUserId)) {
+                    familyMembers.push(myEntry);
+                }
+                
+                renderFamilyMembers();
+                updateMapMarkers();
+            }
+        }
+
+        // Sync family data
+        function syncFamilyData() {
+            if (!currentFamilyId) return;
+            
+            updateSyncStatus('Syncing...', 'syncing');
+            
+            const familyGroup = getFamilyGroup(currentFamilyId);
+            if (familyGroup && familyGroup.members) {
+                let hasChanges = false;
+                
+                // Check for updates from other family members
+                familyGroup.members.forEach(serverMember => {
+                    const localMember = familyMembers.find(m => m.id === serverMember.id);
+                    
+                    if (localMember && !localMember.isMe) {
+                        // Check if server data is newer
+                        if (serverMember.lastUpdated > (localMember.lastUpdated || 0)) {
+                            Object.assign(localMember, serverMember);
+                            hasChanges = true;
+                        }
+                    } else if (!localMember && serverMember.id !== myUserId) {
+                        // New member joined
+                        familyMembers.push({
+                            ...serverMember,
+                            isMe: false
+                        });
+                        hasChanges = true;
+                    }
+                });
+                
+                if (hasChanges) {
+                    renderFamilyMembers();
+                    updateMapMarkers();
+                    updateSyncStatus('New family updates received', 'success');
+                } else {
+                    updateSyncStatus('Family data up to date', 'success');
+                }
+            }
+        }
+
+        // Update my location in shared storage
+        function updateMyLocationInSharedStorage() {
+            if (!currentFamilyId) return;
+            
+            const familyGroup = getFamilyGroup(currentFamilyId);
+            if (familyGroup) {
+                // Update my entry in the family group
+                const myIndex = familyGroup.members.findIndex(m => m.id === myUserId);
+                const myData = familyMembers.find(m => m.isMe);
+                
+                if (myIndex >= 0 && myData) {
+                    familyGroup.members[myIndex] = {
+                        ...myData,
+                        lastUpdated: Date.now()
+                    };
+                } else if (myData) {
+                    // Add my entry if not found
+                    familyGroup.members.push({
+                        ...myData,
+                        lastUpdated: Date.now()
+                    });
+                }
+                
+                familyGroup.lastUpdated = Date.now();
+                saveFamilyGroup(currentFamilyId, familyGroup);
+            }
+        }
+
+        // Generate unique family ID
+        function generateFamilyId() {
+            return 'family_' + Date.now() + '_' + Math.random().toString(36).substr(2, 9);
+        }
+
+        // Show share modal
+        function showShareModal() {
+            // Use current family ID for sharing
+            const shareUrl = `${window.location.origin}${window.location.pathname}?join=${currentFamilyId}`;
+            
+            document.getElementById('shareLink').textContent = shareUrl;
+            document.getElementById('shareModal').style.display = 'block';
+        }
+
+        // Close share modal
+        function closeShareModal() {
+            document.getElementById('shareModal').style.display = 'none';
+        }
+
+        // Copy share link
+        function copyShareLink() {
+            const shareLink = document.getElementById('shareLink').textContent;
+            navigator.clipboard.writeText(shareLink).then(() => {
+                showAlert('Link copied to clipboard!', 'success');
+            }).catch(() => {
+                const textArea = document.createElement('textarea');
+                textArea.value = shareLink;
+                document.body.appendChild(textArea);
+                textArea.select();
+                document.execCommand('copy');
+                document.body.removeChild(textArea);
+                showAlert('Link copied to clipboard!', 'success');
+            });
+        }
+
+        // Join family group
+        function joinFamily() {
+            const name = document.getElementById('joinNameInput').value.trim();
+            if (!name) {
+                showAlert('Please enter your name to join the family group.');
+                return;
+            }
+
+            const colors = ['#ff6b6b', '#4ecdc4', '#45b7d1', '#f9ca24', '#f0932b', '#eb4d4b', '#6c5ce7', '#a29bfe'];
+            const randomColor = colors[Math.floor(Math.random() * colors.length)];
+            
+            // Update my info
+            const myData = {
+                id: myUserId,
+                name: name,
+                avatar: name.split(' ').map(n => n[0]).join('').toUpperCase(),
+                color: randomColor,
+                status: 'offline',
+                location: null,
+                lastSeen: 'Never',
+                isMe: true,
+                accuracy: null,
+                lastUpdated: Date.now()
+            };
+            
+            // Load existing family group
+            loadFamilyMembers();
+            
+            // Update or add my entry
+            const myIndex = familyMembers.findIndex(m => m.id === myUserId);
+            if (myIndex >= 0) {
+                familyMembers[myIndex] = myData;
+            } else {
+                familyMembers.push(myData);
+            }
+            
+            // Save to shared storage
+            const familyGroup = getFamilyGroup(currentFamilyId) || {
+                id: currentFamilyId,
+                members: [],
+                createdAt: Date.now()
+            };
+            
+            const memberIndex = familyGroup.members.findIndex(m => m.id === myUserId);
+            if (memberIndex >= 0) {
+                familyGroup.members[memberIndex] = myData;
+            } else {
+                familyGroup.members.push(myData);
+            }
+            
+            saveFamilyGroup(currentFamilyId, familyGroup);
+            
+            // Hide join section
+            document.getElementById('joinSection').classList.remove('show');
+            
+            renderFamilyMembers();
+            showAlert(`Welcome ${name}! You've joined the family group.`, 'success');
+            
+            // Auto-request location permission
+            setTimeout(() => {
+                shareMyLocation();
+            }, 1000);
+        }
+
+        // Initialize map
+        function initMap() {
+            const defaultLat = 40.7128;
+            const defaultLng = -74.0060;
+            
+            map = L.map('map').setView([defaultLat, defaultLng], 10);
+            
+            L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+                attribution: '© OpenStreetMap contributors'
+            }).addTo(map);
+        }
+
+        // Request location permission
+        function requestLocationPermission() {
+            const geoStatus = document.getElementById('geoStatus');
+            
+            if (!navigator.geolocation) {
+                geoStatus.innerHTML = '<i class="fas fa-exclamation-triangle"></i> Geolocation is not supported by this browser.';
+                geoStatus.className = 'geo-status error';
+                return;
+            }
+
+            geoStatus.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Requesting location permission...';
+            geoStatus.className = 'geo-status requesting';
+
+            navigator.geolocation.getCurrentPosition(
+                (position) => {
+                    locationPermissionGranted = true;
+                    geoStatus.innerHTML = '<i class="fas fa-check-circle"></i> Location permission granted';
+                    geoStatus.className = 'geo-status';
+                    
+                    myLocation = {
+                        lat: position.coords.latitude,
+                        lng: position.coords.longitude,
+                        accuracy: position.coords.accuracy,
+                        timestamp: Date.now()
+                    };
+                    
+                    updateMyLocationStatus();
+                    updateMapWithMyLocation();
+                    
+                    setTimeout(() => {
+                        geoStatus.style.display = 'none';
+                    }, 3000);
+                },
+                (error) => {
+                    locationPermissionGranted = false;
+                    let errorMessage = 'Location access denied';
+                    
+                    switch(error.code) {
+                        case error.PERMISSION_DENIED:
+                            errorMessage = 'Location access denied by user';
+                            break;
+                        case error.POSITION_UNAVAILABLE:
+                            errorMessage = 'Location information unavailable';
+                            break;
+                        case error.TIMEOUT:
+                            errorMessage = 'Location request timed out';
+                            break;
+                    }
+                    
+                    geoStatus.innerHTML = `<i class="fas fa-exclamation-triangle"></i> ${errorMessage}`;
+                    geoStatus.className = 'geo-status denied';
+                    
+                    showAlert(errorMessage + '. Please enable location access to share your location.', 'error');
+                },
+                {
+                    enableHighAccuracy: true,
+                    timeout: 15000,
+                    maximumAge: 60000
+                }
+            );
+        }
+
+        // Update my location status
+        function updateMyLocationStatus() {
+            const myMember = familyMembers.find(m => m.isMe);
+            if (myMember && myLocation) {
+                myMember.location = myLocation;
+                myMember.status = 'online';
+                myMember.lastSeen = formatTime(new Date());
+                myMember.accuracy = myLocation.accuracy;
+                myMember.lastUpdated = Date.now();
+                
+                renderFamilyMembers();
+                updateMyLocationInSharedStorage();
+            }
+        }
+
+        // Update map with my location
+        function updateMapWithMyLocation() {
+            if (myLocation && map) {
+                map.setView([myLocation.lat, myLocation.lng], 13);
+                updateMapMarkers();
+            }
+        }
+
+        // Share my location
+        function shareMyLocation() {
+            if (!locationPermissionGranted) {
+                requestLocationPermission();
+                return;
+            }
+
+            const shareBtn = document.getElementById('shareBtn');
+            shareBtn.disabled = true;
+            shareBtn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Getting Location...';
+
+            navigator.geolocation.getCurrentPosition(
+                (position) => {
+                    myLocation = {
+                        lat: position.coords.latitude,
+                        lng: position.coords.longitude,
+                        accuracy: position.coords.accuracy,
+                        timestamp: Date.now()
+                    };
+                    
+                    updateMyLocationStatus();
+                    updateMapWithMyLocation();
+                    
+                    shareBtn.disabled = false;
+                    shareBtn.innerHTML = '<i class="fas fa-check"></i> Location Shared';
+                    
+                    setTimeout(() => {
+                        shareBtn.innerHTML = '<i class="fas fa-crosshairs"></i> Share My Location';
+                    }, 2000);
+                    
+                    showAlert('Your location has been shared with family members!', 'success');
+                },
+                (error) => {
+                    shareBtn.disabled = false;
+                    shareBtn.innerHTML = '<i class="fas fa-crosshairs"></i> Share My Location';
+                    
+                    let errorMessage = 'Failed to get location';
+                    switch(error.code) {
+                        case error.PERMISSION_DENIED:
+                            errorMessage = 'Location access denied';
+                            break;
+                        case error.POSITION_UNAVAILABLE:
+                            errorMessage = 'Location unavailable';
+                            break;
+                        case error.TIMEOUT:
+                            errorMessage = 'Location request timed out';
+                            break;
+                    }
+                    
+                    showAlert(errorMessage, 'error');
+                },
+                {
+                    enableHighAccuracy: true,
+                    timeout: 10000,
+                    maximumAge: 60000
+                }
+            );
+        }
+
+        // Toggle location sharing
+        function toggleLocationSharing() {
+            const toggleBtn = document.getElementById('toggleBtn');
+            
+            if (locationSharingEnabled) {
+                // Disable auto-sharing
+                locationSharingEnabled = false;
+                if (watchId) {
+                    navigator.geolocation.clearWatch(watchId);
+                    watchId = null;
+                }
+                
+                toggleBtn.innerHTML = '<i class="fas fa-toggle-off"></i> Auto-Share';
+                toggleBtn.className = 'btn btn-secondary';
+                
+                showAlert('Automatic location sharing disabled', 'success');
+            } else {
+                // Enable auto-sharing
+                if (!locationPermissionGranted) {
+                    requestLocationPermission();
+                    return;
+                }
+                
+                locationSharingEnabled = true;
+                toggleBtn.innerHTML = '<i class="fas fa-toggle-on"></i> Auto-Share';
+                toggleBtn.className = 'btn btn-primary';
+                
+                // Start watching location
+                watchId = navigator.geolocation.watchPosition(
+                    (position) => {
+                        myLocation = {
+                            lat: position.coords.latitude,
+                            lng: position.coords.longitude,
+                            accuracy: position.coords.accuracy,
+                            timestamp: Date.now()
+                        };
+                        
+                        updateMyLocationStatus();
+                        updateMapMarkers();
+                    },
+                    (error) => {
+                        console.error('Location watch error:', error);
+                    },
+                    {
+                        enableHighAccuracy: true,
+                        timeout: 10000,
+                        maximumAge: 30000
+                    }
+                );
+                
+                showAlert('Automatic location sharing enabled', 'success');
+            }
+        }
+
+        // Render family members
+        function renderFamilyMembers() {
+            const container = document.getElementById('familyMembers');
+            container.innerHTML = '';
+
+            familyMembers.forEach(member => {
+                const memberDiv = document.createElement('div');
+                memberDiv.className = `family-member ${selectedMember === member.id ? 'active' : ''}`;
+                memberDiv.onclick = () => selectMember(member.id);
+
+                const avatar = document.createElement('div');
+                avatar.className = 'avatar';
+                avatar.style.background = `linear-gradient(45deg, ${member.color}, ${adjustColor(member.color, -20)})`;
+                avatar.innerHTML = `
+                    ${member.avatar}
+                    <div class="status-indicator ${member.status}"></div>
+                `;
+
+                const memberInfo = document.createElement('div');
+                memberInfo.className = 'member-info';
+                
+                const distance = member.location && myLocation ? 
+                    calculateDistance(myLocation.lat, myLocation.lng, member.location.lat, member.location.lng) : null;
+                
+                const distanceText = distance ? `${distance.toFixed(1)} km away` : '';
+                const accuracyText = member.accuracy ? getAccuracyText(member.accuracy) : '';
+                
+                memberInfo.innerHTML = `
+                    <h3>${member.name}</h3>
+                    <p>${member.location ? 'Location shared' : 'No location'} ${distanceText}</p>
+                    <small>Last seen: ${member.lastSeen} ${accuracyText}</small>
+                `;
+
+                memberDiv.appendChild(avatar);
+                memberDiv.appendChild(memberInfo);
+                container.appendChild(memberDiv);
+            });
+        }
+
+        // Select member
+        function selectMember(memberId) {
+            selectedMember = memberId;
+            const member = familyMembers.find(m => m.id === memberId);
+            
+            if (member && member.location) {
+                map.setView([member.location.lat, member.location.lng], 15);
+                showLocationDetails(member);
+            }
+            
+            renderFamilyMembers();
+        }
+
+        // Show location details
+        function showLocationDetails(member) {
+            const detailsDiv = document.getElementById('locationDetails');
+            const nameEl = document.getElementById('selectedMemberName');
+            const locationEl = document.getElementById('selectedMemberLocation');
+            const timeEl = document.getElementById('selectedMemberTime');
+            const distanceEl = document.getElementById('distanceInfo');
+            const gpsEl = document.getElementById('gpsInfo');
+
+            nameEl.textContent = member.name;
+            
+            if (member.location) {
+                locationEl.textContent = `${member.location.lat.toFixed(6)}, ${member.location.lng.toFixed(6)}`;
+                timeEl.textContent = `Updated: ${formatTime(new Date(member.location.timestamp))}`;
+                
+                // Distance calculation
+                if (myLocation && !member.isMe) {
+                    const distance = calculateDistance(
+                        myLocation.lat, myLocation.lng,
+                        member.location.lat, member.location.lng
+                    );
+                    distanceEl.innerHTML = `<i class="fas fa-route"></i> ${distance.toFixed(1)} km from your location`;
+                    distanceEl.style.display = 'block';
+                } else {
+                    distanceEl.style.display = 'none';
+                }
+                
+                // GPS accuracy info
+                if (member.accuracy) {
+                    const accuracyClass = getAccuracyClass(member.accuracy);
+                    gpsEl.innerHTML = `
+                        <i class="fas fa-satellite-dish"></i> 
+                        GPS Accuracy: ±${member.accuracy.toFixed(0)}m 
+                        <span class="accuracy-indicator ${accuracyClass}">${getAccuracyText(member.accuracy)}</span>
+                    `;
+                    gpsEl.style.display = 'block';
+                } else {
+                    gpsEl.style.display = 'none';
+                }
+                
+                detailsDiv.style.display = 'block';
+            } else {
+                locationEl.textContent = 'No location available';
+                timeEl.textContent = '';
+                distanceEl.style.display = 'none';
+                gpsEl.style.display = 'none';
+                detailsDiv.style.display = 'block';
+            }
+        }
+
+        // Update map markers
+        function updateMapMarkers() {
+            // Clear existing markers
+            Object.values(markers).forEach(marker => {
+                map.removeLayer(marker);
+            });
+            markers = {};
+
+            // Add markers for each family member with location
+            familyMembers.forEach(member => {
+                if (member.location) {
+                    const icon = L.divIcon({
+                        className: 'custom-marker',
+                        html: `
+                            <div style="
+                                width: 40px;
+                                height: 40px;
+                                background: ${member.color};
+                                border: 3px solid white;
+                                border-radius: 50%;
+                                display: flex;
+                                align-items: center;
+                                justify-content: center;
+                                color: white;
+                                font-weight: bold;
+                                font-size: 12px;
+                                box-shadow: 0 2px 8px rgba(0,0,0,0.3);
+                                position: relative;
+                            ">
+                                ${member.avatar}
+                                <div style="
+                                    position: absolute;
+                                    bottom: -2px;
+                                    right: -2px;
+                                    width: 12px;
+                                    height: 12px;
+                                    background: ${member.status === 'online' ? '#48bb78' : '#a0aec0'};
+                                    border: 2px solid white;
+                                    border-radius: 50%;
+                                "></div>
+                            </div>
+                        `,
+                        iconSize: [40, 40],
+                        iconAnchor: [20, 20]
+                    });
+
+                    const marker = L.marker([member.location.lat, member.location.lng], { icon })
+                        .addTo(map)
+                        .bindPopup(`
+                            <div style="text-align: center;">
+                                <strong>${member.name}</strong><br>
+                                ${member.isMe ? 'Your location' : 'Family member'}<br>
+                                <small>Updated: ${formatTime(new Date(member.location.timestamp))}</small>
+                            </div>
+                        `);
+
+                    markers[member.id] = marker;
+                }
+            });
+        }
+
+        // Clear all locations
+        function clearAllLocations() {
+            if (confirm('Are you sure you want to clear all family locations?')) {
+                familyMembers.forEach(member => {
+                    if (!member.isMe) {
+                        member.location = null;
+                        member.status = 'offline';
+                        member.lastSeen = 'Never';
+                        member.accuracy = null;
+                    }
+                });
+                
+                // Clear from shared storage
+                if (currentFamilyId) {
+                    const familyGroup = getFamilyGroup(currentFamilyId);
+                    if (familyGroup) {
+                        familyGroup.members = familyGroup.members.map(member => {
+                            if (member.id !== myUserId) {
+                                return {
+                                    ...member,
+                                    location: null,
+                                    status: 'offline',
+                                    lastSeen: 'Never',
+                                    accuracy: null
+                                };
+                            }
+                            return member;
+                        });
+                        saveFamilyGroup(currentFamilyId, familyGroup);
+                    }
+                }
+                
+                renderFamilyMembers();
+                updateMapMarkers();
+                document.getElementById('locationDetails').style.display = 'none';
+                selectedMember = null;
+                
+                showAlert('All family locations cleared', 'success');
+            }
+        }
+
+        // Utility functions
+        function calculateDistance(lat1, lon1, lat2, lon2) {
+            const R = 6371; // Earth's radius in km
+            const dLat = (lat2 - lat1) * Math.PI / 180;
+            const dLon = (lon2 - lon1) * Math.PI / 180;
+            const a = Math.sin(dLat/2) * Math.sin(dLat/2) +
+                    Math.cos(lat1 * Math.PI / 180) * Math.cos(lat2 * Math.PI / 180) *
+                    Math.sin(dLon/2) * Math.sin(dLon/2);
+            const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a));
+            return R * c;
+        }
+
+        function formatTime(date) {
+            return date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+        }
+
+        function getAccuracyText(accuracy) {
+            if (accuracy <= 10) return 'Excellent';
+            if (accuracy <= 50) return 'Good';
+            if (accuracy <= 100) return 'Fair';
+            return 'Poor';
+        }
+
+        function getAccuracyClass(accuracy) {
+            if (accuracy <= 10) return 'accuracy-good';
+            if (accuracy <= 50) return 'accuracy-good';
+            if (accuracy <= 100) return 'accuracy-fair';
+            return 'accuracy-poor';
+        }
+
+        function adjustColor(color, percent) {
+            const num = parseInt(color.replace("#", ""), 16);
+            const amt = Math.round(2.55 * percent);
+            const R = (num >> 16) + amt;
+            const G = (num >> 8 & 0x00FF) + amt;
+            const B = (num & 0x0000FF) + amt;
+            return "#" + (0x1000000 + (R < 255 ? R < 1 ? 0 : R : 255) * 0x10000 +
+                (G < 255 ? G < 1 ? 0 : G : 255) * 0x100 +
+                (B < 255 ? B < 1 ? 0 : B : 255)).toString(16).slice(1);
+        }
+
+        function showAlert(message, type = 'error') {
+            const alertBox = document.getElementById('alertBox');
+            const alertTitle = document.getElementById('alertTitle');
+            const alertMessage = document.getElementById('alertMessage');
+            
+            alertTitle.textContent = type === 'success' ? 'Success:' : 'Alert:';
+            alertMessage.textContent = message;
+            alertBox.className = `alert show ${type}`;
+            
+            setTimeout(() => {
+                alertBox.classList.remove('show');
+            }, 5000);
+        }
+
+        // Initialize app
+        function initApp() {
+            initializeUser();
+            initMap();
+            checkForFamilyJoin();
+            
+            // Start sync interval
+            syncInterval = setInterval(syncFamilyData, 5000);
+            
+            // Initial sync
+            setTimeout(syncFamilyData, 1000);
+            
+            // Auto-request location permission after a delay
+            setTimeout(() => {
+                if (!locationPermissionGranted) {
+                    requestLocationPermission();
+                }
+            }, 2000);
+        }
+
+        // Close modal when clicking outside
+        window.onclick = function(event) {
+            const modal = document.getElementById('shareModal');
+            if (event.target === modal) {
+                closeShareModal();
+            }
+        };
+
+        // Initialize when page loads
+        document.addEventListener('DOMContentLoaded', initApp);
+
+        // Cleanup on page unload
+        window.addEventListener('beforeunload', () => {
+            if (watchId) {
+                navigator.geolocation.clearWatch(watchId);
+            }
+            if (syncInterval) {
+                clearInterval(syncInterval);
+            }
+        });
+    </script>
+</body>
+</html>
