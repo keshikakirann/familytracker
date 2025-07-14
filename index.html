@@ -401,6 +401,16 @@
             margin-bottom: 10px;
         }
 
+        .debug-info {
+            background: #f7fafc;
+            border: 1px solid #e2e8f0;
+            border-radius: 8px;
+            padding: 10px;
+            margin-top: 10px;
+            font-size: 0.8em;
+            color: #4a5568;
+        }
+
         @media (max-width: 768px) {
             .main-content {
                 grid-template-columns: 1fr;
@@ -443,6 +453,13 @@
                 </div>
                 
                 <div id="map"></div>
+                
+                <div class="debug-info" id="debugInfo">
+                    <strong>Debug Info:</strong><br>
+                    User ID: <span id="userIdDebug">Loading...</span><br>
+                    Family ID: <span id="familyIdDebug">Loading...</span><br>
+                    Status: <span id="statusDebug">Initializing...</span>
+                </div>
                 
                 <div class="location-details" id="locationDetails" style="display: none;">
                     <h3 id="selectedMemberName"></h3>
@@ -572,16 +589,19 @@
         let familyMembersUnsubscribe = null;
         let myMemberDoc = null;
 
-        // Initialize user ID
+        // Initialize user ID with better uniqueness
         function initializeUser() {
-            // Check if user already has an ID stored
-            let storedUserId = localStorage.getItem('family_tracker_user_id');
-            if (storedUserId) {
-                myUserId = storedUserId;
-            } else {
-                myUserId = 'user_' + Date.now() + '_' + Math.random().toString(36).substr(2, 9);
-                localStorage.setItem('family_tracker_user_id', myUserId);
-            }
+            // Generate a more unique user ID
+            const timestamp = Date.now();
+            const random = Math.random().toString(36).substr(2, 9);
+            const browser = navigator.userAgent.split(' ')[0];
+            const browserRandom = Math.random().toString(36).substr(2, 5);
+            
+            myUserId = `user_${timestamp}_${random}_${browserRandom}`;
+            
+            // Update debug info
+            document.getElementById('userIdDebug').textContent = myUserId;
+            document.getElementById('statusDebug').textContent = 'User ID generated';
         }
 
         // Firebase helper functions
@@ -596,9 +616,13 @@
                     lastUpdated: serverTimestamp(),
                     memberCount: 0
                 });
+                
+                document.getElementById('statusDebug').textContent = 'Family group created';
                 return true;
             } catch (error) {
                 console.error('Error creating family group:', error);
+                document.getElementById('statusDebug').textContent = `Error creating family: ${error.message}`;
+                updateFirebaseStatus(`Failed to create family: ${error.message}`, 'error');
                 return false;
             }
         }
@@ -613,15 +637,22 @@
                     lastUpdated: serverTimestamp(),
                     joinedAt: serverTimestamp()
                 });
+                
+                document.getElementById('statusDebug').textContent = 'Joined family group';
                 return true;
             } catch (error) {
                 console.error('Error joining family group:', error);
+                document.getElementById('statusDebug').textContent = `Error joining family: ${error.message}`;
+                updateFirebaseStatus(`Failed to join family: ${error.message}`, 'error');
                 return false;
             }
         }
 
         async function updateMyLocation(locationData) {
-            if (!currentFamilyId || !myUserId) return;
+            if (!currentFamilyId || !myUserId) {
+                document.getElementById('statusDebug').textContent = 'Missing family or user ID';
+                return;
+            }
             
             const { doc, setDoc, serverTimestamp } = window.firestoreImports;
             
@@ -632,10 +663,12 @@
                     lastUpdated: serverTimestamp()
                 }, { merge: true });
                 
+                document.getElementById('statusDebug').textContent = 'Location updated';
                 updateFirebaseStatus('Location updated successfully', 'success');
             } catch (error) {
                 console.error('Error updating location:', error);
-                updateFirebaseStatus('Failed to update location', 'error');
+                document.getElementById('statusDebug').textContent = `Error updating location: ${error.message}`;
+                updateFirebaseStatus(`Failed to update location: ${error.message}`, 'error');
             }
         }
 
@@ -648,11 +681,13 @@
                 const memberRef = doc(window.db, 'families', currentFamilyId, 'members', myUserId);
                 await deleteDoc(memberRef);
                 
+                document.getElementById('statusDebug').textContent = 'Left family group';
                 updateFirebaseStatus('Left family group', 'success');
                 return true;
             } catch (error) {
                 console.error('Error removing from family:', error);
-                updateFirebaseStatus('Failed to leave family group', 'error');
+                document.getElementById('statusDebug').textContent = `Error leaving family: ${error.message}`;
+                updateFirebaseStatus(`Failed to leave family group: ${error.message}`, 'error');
                 return false;
             }
         }
@@ -664,29 +699,37 @@
             
             const { collection, onSnapshot, orderBy, query } = window.firestoreImports;
             
-            const membersRef = collection(window.db, 'families', familyId, 'members');
-            const q = query(membersRef, orderBy('joinedAt', 'asc'));
-            
-            familyMembersUnsubscribe = onSnapshot(q, (snapshot) => {
-                familyMembers = [];
+            try {
+                const membersRef = collection(window.db, 'families', familyId, 'members');
+                const q = query(membersRef, orderBy('joinedAt', 'asc'));
                 
-                snapshot.forEach((doc) => {
-                    const data = doc.data();
-                    familyMembers.push({
-                        id: doc.id,
-                        ...data,
-                        isMe: doc.id === myUserId,
-                        lastSeen: data.lastUpdated ? new Date(data.lastUpdated.toDate()).toLocaleString() : 'Never'
+                familyMembersUnsubscribe = onSnapshot(q, (snapshot) => {
+                    familyMembers = [];
+                    
+                    snapshot.forEach((doc) => {
+                        const data = doc.data();
+                        familyMembers.push({
+                            id: doc.id,
+                            ...data,
+                            isMe: doc.id === myUserId,
+                            lastSeen: data.lastUpdated ? new Date(data.lastUpdated.toDate()).toLocaleString() : 'Never'
+                        });
                     });
+                    
+                    document.getElementById('statusDebug').textContent = `${familyMembers.length} members synced`;
+                    renderFamilyMembers();
+                    updateMapMarkers();
+                    updateFirebaseStatus(`${familyMembers.length} family members connected`, 'success');
+                }, (error) => {
+                    console.error('Error listening to family members:', error);
+                    document.getElementById('statusDebug').textContent = `Sync error: ${error.message}`;
+                    updateFirebaseStatus(`Failed to sync family data: ${error.message}`, 'error');
                 });
-                
-                renderFamilyMembers();
-                updateMapMarkers();
-                updateFirebaseStatus(`${familyMembers.length} family members connected`, 'success');
-            }, (error) => {
-                console.error('Error listening to family members:', error);
-                updateFirebaseStatus('Failed to sync family data', 'error');
-            });
+            } catch (error) {
+                console.error('Error setting up family subscription:', error);
+                document.getElementById('statusDebug').textContent = `Subscription error: ${error.message}`;
+                updateFirebaseStatus(`Failed to setup sync: ${error.message}`, 'error');
+            }
         }
 
         function updateFirebaseStatus(message, type = 'success') {
@@ -709,7 +752,9 @@
             if (familyId) {
                 // Someone is joining an existing family
                 currentFamilyId = familyId;
+                document.getElementById('familyIdDebug').textContent = familyId;
                 document.getElementById('joinSection').classList.add('show');
+                document.getElementById('statusDebug').textContent = 'Ready to join family';
                 showAlert('You\'ve been invited to join a family group! Enter your name to start sharing location.', 'success');
                 
                 // Subscribe to family members
@@ -717,13 +762,17 @@
             } else {
                 // Create new family group for this user
                 currentFamilyId = generateFamilyId();
+                document.getElementById('familyIdDebug').textContent = currentFamilyId;
+                document.getElementById('statusDebug').textContent = 'Creating new family';
                 initializeDefaultFamily();
             }
         }
 
         // Generate unique family ID
         function generateFamilyId() {
-            return 'family_' + Date.now() + '_' + Math.random().toString(36).substr(2, 9);
+            const timestamp = Date.now();
+            const random = Math.random().toString(36).substr(2, 9);
+            return `family_${timestamp}_${random}`;
         }
 
         // Initialize default family
@@ -778,389 +827,407 @@
             
             const memberData = {
                 name: name,
-                avatar: name.split(' ').map(n => n[0]).join('').toUpperCase(),
+                id: myUserId,
                 color: randomColor,
-                status: 'offline',
-                location: null,
-                accuracy: null
+                status: 'online',
+                latitude: null,
+                longitude: null,
+                accuracy: null,
+                address: 'Getting location...',
+                battery: getBatteryLevel(),
+                deviceInfo: getDeviceInfo()
             };
-            
+
             const success = await joinFamilyGroup(currentFamilyId, memberData);
             if (success) {
                 document.getElementById('joinSection').classList.remove('show');
                 showAlert(`Welcome ${name}! You've joined the family group.`, 'success');
                 
-                // Auto-request location permission
-                setTimeout(() => {
-                    shareMyLocation();
-                }, 1000);
+                // Start location sharing automatically after joining
+                requestLocationPermission();
             } else {
-                showAlert('Failed to join family group. Please try again.');
+                showAlert('Failed to join family group. Please try again.', 'error');
             }
         }
 
-        // Initialize map
-        function initMap() {
-            const defaultLat = 40.7128;
-            const defaultLng = -74.0060;
+        // Get battery level (if supported)
+        function getBatteryLevel() {
+            if (navigator.getBattery) {
+                navigator.getBattery().then(battery => {
+                    return Math.round(battery.level * 100);
+                });
+            }
+            return 'Unknown';
+        }
+
+        // Get device info
+        function getDeviceInfo() {
+            const userAgent = navigator.userAgent;
+            let device = 'Unknown';
             
-            map = L.map('map').setView([defaultLat, defaultLng], 10);
+            if (/Mobile|Android|iPhone|iPad/.test(userAgent)) {
+                if (/iPhone/.test(userAgent)) device = 'iPhone';
+                else if (/iPad/.test(userAgent)) device = 'iPad';
+                else if (/Android/.test(userAgent)) device = 'Android';
+                else device = 'Mobile';
+            } else {
+                device = 'Desktop';
+            }
+            
+            return device;
+        }
+
+        // Initialize map
+        function initializeMap() {
+            map = L.map('map').setView([40.7128, -74.0060], 10);
             
             L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
                 attribution: '© OpenStreetMap contributors'
             }).addTo(map);
-        }
-
-        // Request location permission
-        function requestLocationPermission() {
-            const geoStatus = document.getElementById('geoStatus');
             
-            if (!navigator.geolocation) {
-                geoStatus.innerHTML = '<i class="fas fa-exclamation-triangle"></i> Geolocation is not supported by this browser.';
-                geoStatus.className = 'geo-status error';
-                return;
-            }
-
-            geoStatus.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Requesting location permission...';
-            geoStatus.className = 'geo-status requesting';
-
-            navigator.geolocation.getCurrentPosition(
-                (position) => {
-                    locationPermissionGranted = true;
-                    geoStatus.innerHTML = '<i class="fas fa-check-circle"></i> Location permission granted';
-                    geoStatus.className = 'geo-status';
-                    
-                    updateLocationFromPosition(position);
-                    
-                    // Auto-hide success message after 3 seconds
-                    setTimeout(() => {
-                        geoStatus.style.display = 'none';
-                    }, 3000);
-                },
-                (error) => {
-                    let errorMessage = 'Location access denied or unavailable';
-                    switch(error.code) {
-                        case error.PERMISSION_DENIED:
-                            errorMessage = 'Location access denied by user';
-                            break;
-                        case error.POSITION_UNAVAILABLE:
-                            errorMessage = 'Location information unavailable';
-                            break;
-                        case error.TIMEOUT:
-                            errorMessage = 'Location request timed out';
-                            break;
-                    }
-                    
-                    geoStatus.innerHTML = `<i class="fas fa-exclamation-triangle"></i> ${errorMessage}`;
-                    geoStatus.className = 'geo-status error';
-                    locationPermissionGranted = false;
-                }
-            );
-        }
-
-        // Update location from position
-        async function updateLocationFromPosition(position) {
-            if (!position || !position.coords) return;
-            
-            myLocation = {
-                lat: position.coords.latitude,
-                lng: position.coords.longitude,
-                accuracy: position.coords.accuracy
-            };
-            
-            const locationData = {
-                location: myLocation,
-                accuracy: position.coords.accuracy,
-                status: 'online'
-            };
-            
-            await updateMyLocation(locationData);
-            
-            // Center map on my location
-            map.setView([position.coords.latitude, position.coords.longitude], 13);
-        }
-
-        // Share my location
-        async function shareMyLocation() {
-            if (!locationPermissionGranted) {
-                requestLocationPermission();
-                return;
-            }
-            
-            const shareBtn = document.getElementById('shareBtn');
-            shareBtn.disabled = true;
-            shareBtn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Getting Location...';
-            
-            navigator.geolocation.getCurrentPosition(
-                async (position) => {
-                    await updateLocationFromPosition(position);
-                    shareBtn.disabled = false;
-                    shareBtn.innerHTML = '<i class="fas fa-crosshairs"></i> Share My Location';
-                    showAlert('Location shared successfully!', 'success');
-                },
-                (error) => {
-                    shareBtn.disabled = false;
-                    shareBtn.innerHTML = '<i class="fas fa-crosshairs"></i> Share My Location';
-                    showAlert('Failed to get location. Please try again.');
-                }
-            );
-        }
-
-        // Toggle location sharing
-        function toggleLocationSharing() {
-            const toggleBtn = document.getElementById('toggleBtn');
-            
-            if (locationSharingEnabled) {
-                // Stop sharing
-                if (watchId) {
-                    navigator.geolocation.clearWatch(watchId);
-                    watchId = null;
-                }
-                locationSharingEnabled = false;
-                toggleBtn.innerHTML = '<i class="fas fa-toggle-off"></i> Auto-Share';
-                toggleBtn.classList.remove('btn-primary');
-                toggleBtn.classList.add('btn-secondary');
-                showAlert('Auto-sharing disabled', 'success');
-            } else {
-                // Start sharing
-                if (!locationPermissionGranted) {
-                    requestLocationPermission();
-                    return;
-                }
-                
-                locationSharingEnabled = true;
-                toggleBtn.innerHTML = '<i class="fas fa-toggle-on"></i> Auto-Share';
-                toggleBtn.classList.remove('btn-secondary');
-                toggleBtn.classList.add('btn-primary');
-                
-                // Watch position changes
-                watchId = navigator.geolocation.watchPosition(
-                    async (position) => {
-                        await updateLocationFromPosition(position);
-                    },
-                    (error) => {
-                        console.error('Watch position error:', error);
-                        showAlert('Location tracking error. Please try again.');
-                    },
-                    {
-                        enableHighAccuracy: true,
-                        timeout: 15000,
-                        maximumAge: 30000
-                    }
-                );
-                
-                showAlert('Auto-sharing enabled', 'success');
-            }
-        }
-
-        // Clear my location
-        async function clearMyLocation() {
-            if (confirm('Are you sure you want to leave the family group?')) {
-                // Stop location sharing
-                if (watchId) {
-                    navigator.geolocation.clearWatch(watchId);
-                    watchId = null;
-                }
-                locationSharingEnabled = false;
-                
-                // Remove from Firebase
-                const success = await removeMyLocation();
-                if (success) {
-                    // Clear local data
-                    currentFamilyId = null;
-                    myLocation = null;
-                    familyMembers = [];
-                    
-                    // Reset UI
-                    document.getElementById('familyMembers').innerHTML = '';
-                    document.getElementById('locationDetails').style.display = 'none';
-                    
-                    // Clear map markers
-                    Object.values(markers).forEach(marker => {
-                        map.removeLayer(marker);
-                    });
-                    markers = {};
-                    
-                    // Reset buttons
-                    const toggleBtn = document.getElementById('toggleBtn');
-                    toggleBtn.innerHTML = '<i class="fas fa-toggle-off"></i> Auto-Share';
-                    toggleBtn.classList.remove('btn-primary');
-                    toggleBtn.classList.add('btn-secondary');
-                    
-                    showAlert('Left family group successfully', 'success');
-                    
-                    // Optionally reload to start fresh
-                    setTimeout(() => {
-                        window.location.reload();
-                    }, 2000);
-                }
-            }
-        }
-
-        // Render family members
-        function renderFamilyMembers() {
-            const container = document.getElementById('familyMembers');
-            container.innerHTML = '';
-            
-            if (familyMembers.length === 0) {
-                container.innerHTML = '<p style="text-align: center; color: #718096; padding: 20px;">No family members yet. Share the invite link to add members!</p>';
-                return;
-            }
-            
-            familyMembers.forEach(member => {
-                const memberEl = document.createElement('div');
-                memberEl.className = 'family-member';
-                memberEl.onclick = () => selectFamilyMember(member);
-                
-                if (selectedMember && selectedMember.id === member.id) {
-                    memberEl.classList.add('active');
-                }
-                
-                const statusClass = member.status === 'online' ? 'online' : 
-                                  member.status === 'away' ? 'away' : 'offline';
-                
-                const accuracyInfo = member.accuracy ? getAccuracyInfo(member.accuracy) : '';
-                
-                memberEl.innerHTML = `
-                    <div class="avatar" style="background: ${member.color || '#667eea'}">
-                        ${member.avatar || member.name.charAt(0)}
-                        <div class="status-indicator ${statusClass}"></div>
-                    </div>
-                    <div class="member-info">
-                        <h3>${member.name} ${member.isMe ? '(You)' : ''}</h3>
-                        <p>${member.location ? 'Location shared' : 'No location'} ${accuracyInfo}</p>
-                        <small>Last seen: ${member.lastSeen}</small>
-                    </div>
-                `;
-                
-                container.appendChild(memberEl);
-            });
-        }
-
-        // Select family member
-        function selectFamilyMember(member) {
-            selectedMember = member;
-            renderFamilyMembers();
-            showMemberDetails(member);
-            
-            // Focus on member's location on map
-            if (member.location) {
-                map.setView([member.location.lat, member.location.lng], 15);
-                
-                // Highlight marker
-                if (markers[member.id]) {
-                    markers[member.id].openPopup();
-                }
-            }
-        }
-
-        // Show member details
-        function showMemberDetails(member) {
-            const detailsEl = document.getElementById('locationDetails');
-            const nameEl = document.getElementById('selectedMemberName');
-            const locationEl = document.getElementById('selectedMemberLocation');
-            const timeEl = document.getElementById('selectedMemberTime');
-            const distanceEl = document.getElementById('distanceInfo');
-            const gpsEl = document.getElementById('gpsInfo');
-            
-            nameEl.textContent = member.name + (member.isMe ? ' (You)' : '');
-            
-            if (member.location) {
-                locationEl.textContent = `${member.location.lat.toFixed(6)}, ${member.location.lng.toFixed(6)}`;
-                timeEl.textContent = `Last updated: ${member.lastSeen}`;
-                
-                // Show distance if not the current user
-                if (!member.isMe && myLocation) {
-                    const distance = calculateDistance(myLocation, member.location);
-                    distanceEl.innerHTML = `<i class="fas fa-route"></i> ${distance.toFixed(2)} km away`;
-                    distanceEl.style.display = 'block';
-                } else {
-                    distanceEl.style.display = 'none';
-                }
-                
-                // Show GPS accuracy
-                if (member.accuracy) {
-                    const accuracyInfo = getAccuracyInfo(member.accuracy);
-                    gpsEl.innerHTML = `<i class="fas fa-satellite"></i> GPS Accuracy: ±${member.accuracy.toFixed(0)}m ${accuracyInfo}`;
-                    gpsEl.style.display = 'block';
-                } else {
-                    gpsEl.style.display = 'none';
-                }
-            } else {
-                locationEl.textContent = 'No location shared';
-                timeEl.textContent = '';
-                distanceEl.style.display = 'none';
-                gpsEl.style.display = 'none';
-            }
-            
-            detailsEl.style.display = 'block';
+            document.getElementById('statusDebug').textContent = 'Map initialized';
         }
 
         // Update map markers
         function updateMapMarkers() {
             // Clear existing markers
-            Object.values(markers).forEach(marker => {
-                map.removeLayer(marker);
-            });
+            Object.values(markers).forEach(marker => map.removeLayer(marker));
             markers = {};
             
-            // Add markers for family members with locations
+            // Add markers for family members with location
             familyMembers.forEach(member => {
-                if (member.location) {
-                    const marker = L.marker([member.location.lat, member.location.lng])
+                if (member.latitude && member.longitude) {
+                    const icon = L.divIcon({
+                        html: `<div style="background: ${member.color}; border: 3px solid white; border-radius: 50%; width: 30px; height: 30px; display: flex; align-items: center; justify-content: center; color: white; font-weight: bold; font-size: 14px; box-shadow: 0 2px 8px rgba(0,0,0,0.3);">${member.name.charAt(0).toUpperCase()}</div>`,
+                        className: 'custom-marker',
+                        iconSize: [30, 30],
+                        iconAnchor: [15, 15]
+                    });
+                    
+                    const marker = L.marker([member.latitude, member.longitude], { icon })
                         .addTo(map)
                         .bindPopup(`
-                            <div style="text-align: center;">
-                                <div style="background: ${member.color || '#667eea'}; color: white; padding: 10px; border-radius: 10px; margin-bottom: 10px;">
-                                    <strong>${member.name}</strong>
-                                    ${member.isMe ? ' (You)' : ''}
-                                </div>
-                                <p><i class="fas fa-clock"></i> ${member.lastSeen}</p>
-                                ${member.accuracy ? `<p><i class="fas fa-satellite"></i> ±${member.accuracy.toFixed(0)}m</p>` : ''}
+                            <div style="text-align: center; min-width: 150px;">
+                                <h4 style="margin: 0 0 8px 0; color: ${member.color};">${member.name}</h4>
+                                <p style="margin: 0; font-size: 0.9em; color: #666;">
+                                    ${member.address || 'Location unknown'}
+                                </p>
+                                <p style="margin: 4px 0 0 0; font-size: 0.8em; color: #999;">
+                                    Updated: ${member.lastSeen}
+                                </p>
+                                ${member.accuracy ? `<p style="margin: 2px 0 0 0; font-size: 0.8em; color: #999;">Accuracy: ${Math.round(member.accuracy)}m</p>` : ''}
                             </div>
                         `);
                     
                     markers[member.id] = marker;
-                    
-                    // Style marker based on member
-                    if (member.isMe) {
-                        marker.setIcon(L.divIcon({
-                            className: 'my-location-marker',
-                            html: `<div style="background: ${member.color || '#667eea'}; width: 20px; height: 20px; border-radius: 50%; border: 3px solid white; box-shadow: 0 0 10px rgba(0,0,0,0.5);"></div>`,
-                            iconSize: [20, 20],
-                            iconAnchor: [10, 10]
-                        }));
-                    }
                 }
             });
             
-            // Auto-fit map to show all markers
+            // Fit map to show all markers
             if (Object.keys(markers).length > 0) {
                 const group = new L.featureGroup(Object.values(markers));
-                map.fitBounds(group.getBounds(), { padding: [20, 20] });
+                map.fitBounds(group.getBounds().pad(0.1));
             }
         }
 
+        // Render family members list
+        function renderFamilyMembers() {
+            const container = document.getElementById('familyMembers');
+            container.innerHTML = '';
+            
+            familyMembers.forEach(member => {
+                const memberElement = document.createElement('div');
+                memberElement.className = `family-member ${selectedMember === member.id ? 'active' : ''}`;
+                memberElement.onclick = () => selectMember(member.id);
+                
+                const statusClass = member.status === 'online' ? 'online' : 
+                                   member.status === 'away' ? 'away' : 'offline';
+                
+                const accuracy = member.accuracy ? Math.round(member.accuracy) : null;
+                const accuracyClass = accuracy ? 
+                    (accuracy <= 50 ? 'accuracy-good' : 
+                     accuracy <= 200 ? 'accuracy-fair' : 'accuracy-poor') : '';
+                
+                memberElement.innerHTML = `
+                    <div class="avatar" style="background: ${member.color}">
+                        ${member.name.charAt(0).toUpperCase()}
+                        <div class="status-indicator ${statusClass}"></div>
+                    </div>
+                    <div class="member-info">
+                        <h3>${member.name} ${member.isMe ? '(You)' : ''}</h3>
+                        <p>${member.address || 'Location not available'}</p>
+                        <small>
+                            Last seen: ${member.lastSeen}
+                            ${accuracy ? `<span class="accuracy-indicator ${accuracyClass}">±${accuracy}m</span>` : ''}
+                        </small>
+                        ${member.deviceInfo ? `<small style="display: block; margin-top: 2px;">${member.deviceInfo}</small>` : ''}
+                    </div>
+                `;
+                
+                container.appendChild(memberElement);
+            });
+        }
+
+        // Select member
+        function selectMember(memberId) {
+            selectedMember = memberId;
+            const member = familyMembers.find(m => m.id === memberId);
+            
+            if (member) {
+                document.getElementById('selectedMemberName').textContent = `${member.name} ${member.isMe ? '(You)' : ''}`;
+                document.getElementById('selectedMemberLocation').textContent = member.address || 'Location not available';
+                document.getElementById('selectedMemberTime').textContent = `Last updated: ${member.lastSeen}`;
+                
+                // Show distance if both locations available
+                if (member.latitude && member.longitude && myLocation) {
+                    const distance = calculateDistance(
+                        myLocation.latitude, myLocation.longitude,
+                        member.latitude, member.longitude
+                    );
+                    document.getElementById('distanceInfo').innerHTML = `
+                        <i class="fas fa-route"></i> Distance: ${distance.toFixed(1)} km
+                    `;
+                } else {
+                    document.getElementById('distanceInfo').innerHTML = '';
+                }
+                
+                // Show GPS accuracy info
+                if (member.accuracy) {
+                    const accuracyClass = member.accuracy <= 50 ? 'accuracy-good' : 
+                                         member.accuracy <= 200 ? 'accuracy-fair' : 'accuracy-poor';
+                    document.getElementById('gpsInfo').innerHTML = `
+                        <i class="fas fa-satellite-dish"></i> GPS Accuracy: 
+                        <span class="accuracy-indicator ${accuracyClass}">±${Math.round(member.accuracy)}m</span>
+                    `;
+                } else {
+                    document.getElementById('gpsInfo').innerHTML = '';
+                }
+                
+                document.getElementById('locationDetails').style.display = 'block';
+                
+                // Pan map to selected member
+                if (member.latitude && member.longitude && markers[memberId]) {
+                    map.panTo([member.latitude, member.longitude]);
+                    markers[memberId].openPopup();
+                }
+            }
+            
+            renderFamilyMembers();
+        }
+
         // Calculate distance between two points
-        function calculateDistance(pos1, pos2) {
+        function calculateDistance(lat1, lon1, lat2, lon2) {
             const R = 6371; // Earth's radius in km
-            const dLat = (pos2.lat - pos1.lat) * Math.PI / 180;
-            const dLon = (pos2.lng - pos1.lng) * Math.PI / 180;
+            const dLat = (lat2 - lat1) * Math.PI / 180;
+            const dLon = (lon2 - lon1) * Math.PI / 180;
             const a = Math.sin(dLat/2) * Math.sin(dLat/2) +
-                    Math.cos(pos1.lat * Math.PI / 180) * Math.cos(pos2.lat * Math.PI / 180) *
+                    Math.cos(lat1 * Math.PI / 180) * Math.cos(lat2 * Math.PI / 180) *
                     Math.sin(dLon/2) * Math.sin(dLon/2);
             const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a));
             return R * c;
         }
 
-        // Get accuracy info
-        function getAccuracyInfo(accuracy) {
-            if (accuracy < 20) {
-                return '<span class="accuracy-indicator accuracy-good">Excellent</span>';
-            } else if (accuracy < 100) {
-                return '<span class="accuracy-indicator accuracy-fair">Good</span>';
+        // Request location permission
+        async function requestLocationPermission() {
+            if (!navigator.geolocation) {
+                showAlert('Geolocation is not supported by this browser.');
+                document.getElementById('geoStatus').innerHTML = '<i class="fas fa-times-circle"></i> Geolocation not supported';
+                document.getElementById('geoStatus').className = 'geo-status error';
+                return;
+            }
+
+            try {
+                const position = await new Promise((resolve, reject) => {
+                    navigator.geolocation.getCurrentPosition(resolve, reject, {
+                        enableHighAccuracy: true,
+                        timeout: 10000,
+                        maximumAge: 300000
+                    });
+                });
+
+                locationPermissionGranted = true;
+                document.getElementById('geoStatus').innerHTML = '<i class="fas fa-check-circle"></i> Location permission granted';
+                document.getElementById('geoStatus').className = 'geo-status';
+                
+                updateLocationData(position);
+                startLocationSharing();
+                
+            } catch (error) {
+                handleLocationError(error);
+            }
+        }
+
+        // Handle location errors
+        function handleLocationError(error) {
+            let message = '';
+            let statusMessage = '';
+            
+            switch(error.code) {
+                case error.PERMISSION_DENIED:
+                    message = 'Location access denied. Please enable location sharing to use this feature.';
+                    statusMessage = 'Location permission denied';
+                    break;
+                case error.POSITION_UNAVAILABLE:
+                    message = 'Location information is unavailable.';
+                    statusMessage = 'Location unavailable';
+                    break;
+                case error.TIMEOUT:
+                    message = 'Location request timed out.';
+                    statusMessage = 'Location request timeout';
+                    break;
+                default:
+                    message = 'An unknown error occurred while retrieving location.';
+                    statusMessage = 'Unknown location error';
+                    break;
+            }
+            
+            showAlert(message, 'error');
+            document.getElementById('geoStatus').innerHTML = `<i class="fas fa-exclamation-triangle"></i> ${statusMessage}`;
+            document.getElementById('geoStatus').className = 'geo-status error';
+            document.getElementById('statusDebug').textContent = `Location error: ${error.code}`;
+        }
+
+        // Update location data
+        function updateLocationData(position) {
+            myLocation = {
+                latitude: position.coords.latitude,
+                longitude: position.coords.longitude,
+                accuracy: position.coords.accuracy,
+                timestamp: Date.now()
+            };
+            
+            // Reverse geocode to get address
+            reverseGeocode(myLocation.latitude, myLocation.longitude);
+            
+            // Update Firebase with location
+            if (currentFamilyId && myUserId) {
+                const locationData = {
+                    latitude: myLocation.latitude,
+                    longitude: myLocation.longitude,
+                    accuracy: myLocation.accuracy,
+                    lastUpdated: new Date(),
+                    status: 'online',
+                    battery: getBatteryLevel(),
+                    deviceInfo: getDeviceInfo()
+                };
+                
+                updateMyLocation(locationData);
+            }
+        }
+
+        // Reverse geocode
+        async function reverseGeocode(lat, lng) {
+            try {
+                const response = await fetch(`https://nominatim.openstreetmap.org/reverse?format=json&lat=${lat}&lon=${lng}`);
+                const data = await response.json();
+                
+                if (data.display_name) {
+                    const address = data.display_name;
+                    
+                    // Update Firebase with address
+                    if (currentFamilyId && myUserId) {
+                        updateMyLocation({ address: address });
+                    }
+                }
+            } catch (error) {
+                console.error('Reverse geocoding failed:', error);
+            }
+        }
+
+        // Share my location
+        function shareMyLocation() {
+            if (!locationPermissionGranted) {
+                requestLocationPermission();
+                return;
+            }
+            
+            navigator.geolocation.getCurrentPosition(
+                updateLocationData,
+                handleLocationError,
+                {
+                    enableHighAccuracy: true,
+                    timeout: 10000,
+                    maximumAge: 300000
+                }
+            );
+        }
+
+        // Start location sharing
+        function startLocationSharing() {
+            if (watchId) {
+                navigator.geolocation.clearWatch(watchId);
+            }
+            
+            watchId = navigator.geolocation.watchPosition(
+                updateLocationData,
+                handleLocationError,
+                {
+                    enableHighAccuracy: true,
+                    timeout: 30000,
+                    maximumAge: 60000
+                }
+            );
+            
+            locationSharingEnabled = true;
+            document.getElementById('toggleBtn').innerHTML = '<i class="fas fa-toggle-on"></i> Auto-Share';
+            document.getElementById('statusDebug').textContent = 'Auto-sharing enabled';
+        }
+
+        // Stop location sharing
+        function stopLocationSharing() {
+            if (watchId) {
+                navigator.geolocation.clearWatch(watchId);
+                watchId = null;
+            }
+            
+            locationSharingEnabled = false;
+            document.getElementById('toggleBtn').innerHTML = '<i class="fas fa-toggle-off"></i> Auto-Share';
+            document.getElementById('statusDebug').textContent = 'Auto-sharing disabled';
+        }
+
+        // Toggle location sharing
+        function toggleLocationSharing() {
+            if (locationSharingEnabled) {
+                stopLocationSharing();
             } else {
-                return '<span class="accuracy-indicator accuracy-poor">Poor</span>';
+                if (locationPermissionGranted) {
+                    startLocationSharing();
+                } else {
+                    requestLocationPermission();
+                }
+            }
+        }
+
+        // Clear my location and leave group
+        async function clearMyLocation() {
+            if (confirm('Are you sure you want to leave the family group?')) {
+                stopLocationSharing();
+                
+                const success = await removeMyLocation();
+                if (success) {
+                    // Clear local data
+                    familyMembers = [];
+                    myLocation = null;
+                    selectedMember = null;
+                    
+                    // Unsubscribe from family updates
+                    if (familyMembersUnsubscribe) {
+                        familyMembersUnsubscribe();
+                    }
+                    
+                    // Clear UI
+                    document.getElementById('familyMembers').innerHTML = '';
+                    document.getElementById('locationDetails').style.display = 'none';
+                    Object.values(markers).forEach(marker => map.removeLayer(marker));
+                    markers = {};
+                    
+                    // Create new family group
+                    currentFamilyId = generateFamilyId();
+                    document.getElementById('familyIdDebug').textContent = currentFamilyId;
+                    initializeDefaultFamily();
+                    
+                    showAlert('You have left the family group. You can now create a new one.', 'success');
+                }
             }
         }
 
@@ -1172,7 +1239,6 @@
             
             alertTitle.textContent = type === 'success' ? 'Success:' : 'Alert:';
             alertMessage.textContent = message;
-            
             alertBox.className = `alert show ${type === 'success' ? 'success' : ''}`;
             
             setTimeout(() => {
@@ -1183,18 +1249,21 @@
         // Initialize app
         function initApp() {
             initializeUser();
-            initMap();
+            initializeMap();
             checkForFamilyJoin();
             
-            // Request location permission on load
-            setTimeout(() => {
-                if (!locationPermissionGranted) {
-                    requestLocationPermission();
+            // Set up modal close on outside click
+            window.onclick = function(event) {
+                const modal = document.getElementById('shareModal');
+                if (event.target === modal) {
+                    closeShareModal();
                 }
-            }, 1000);
+            };
+            
+            document.getElementById('statusDebug').textContent = 'App initialized';
         }
 
-        // Make functions globally available
+        // Make functions available globally
         window.initApp = initApp;
         window.shareMyLocation = shareMyLocation;
         window.toggleLocationSharing = toggleLocationSharing;
@@ -1203,21 +1272,13 @@
         window.closeShareModal = closeShareModal;
         window.copyShareLink = copyShareLink;
         window.joinFamily = joinFamily;
-
-        // Close modal when clicking outside
-        window.onclick = function(event) {
-            const modal = document.getElementById('shareModal');
-            if (event.target === modal) {
-                closeShareModal();
-            }
+        
+        // Auto-initialize when DOM is ready
+        if (document.readyState === 'loading') {
+            document.addEventListener('DOMContentLoaded', initApp);
+        } else {
+            initApp();
         }
-
-        // Handle beforeunload to clean up location sharing
-        window.addEventListener('beforeunload', function() {
-            if (watchId) {
-                navigator.geolocation.clearWatch(watchId);
-            }
-        });
     </script>
 </body>
 </html>
